@@ -11,17 +11,9 @@ import streamlit as st
 import google.generativeai as genai
 
 # **1. 보안 설정: API 키 관리**
-# **중요:** API 키를 코드에 직접 포함시키지 말고, 환경 변수나 Streamlit Secrets를 통해 관리하세요.
-# 여기서는 Streamlit Secrets를 사용하는 예시를 보여드립니다.
-# `.streamlit/secrets.toml` 파일에 다음과 같이 API 키를 추가하세요:
-# GOOGLE_API_KEY = "YOUR_ACTUAL_API_KEY"
-
 try:
-    # GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
-    genai.configure(api_key="AIzaSyD1eKM8Wo6kW4p1UnflQKUzl8Oi-85p7v8")    model = genai.GenerativeModel("gemini-1.5-flash")
-except KeyError:
-    st.error("GOOGLE_API_KEY가 설정되지 않았습니다. `.streamlit/secrets.toml` 파일을 확인하세요.")
-    st.stop()
+    genai.configure(api_key="AIzaSyD1eKM8Wo6kW4p1UnflQKUzl8Oi-85p7v8")
+    model = genai.GenerativeModel("gemini-1.5-flash")
 except Exception as e:
     st.error(f"Gemini 모델 초기화 중 오류가 발생했습니다: {e}")
     st.stop()
