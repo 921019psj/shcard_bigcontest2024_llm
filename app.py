@@ -9,25 +9,34 @@ import torch
 import faiss
 import streamlit as st
 import google.generativeai as genai
-import psutil  # 리소스 모니터링 라이브러리
 
-# Google API Key 설정
+# **1. 보안 설정: API 키 관리**
+# API 키는 코드에 직접 포함시키지 않고, 환경 변수나 Streamlit Secrets를 통해 관리하는 것이 안전합니다.
+# 여기서는 Streamlit Secrets를 사용하는 예시를 보여드립니다.
+# `.streamlit/secrets.toml` 파일에 다음과 같이 API 키를 추가하세요:
+# GOOGLE_API_KEY = "YOUR_ACTUAL_API_KEY"
+
 try:
-    # 환경 변수 또는 Streamlit Secrets에서 API 키 가져오기
-    # GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or st.secrets["GOOGLE_API_KEY"]
+    # GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key="AIzaSyD1eKM8Wo6kW4p1UnflQKUzl8Oi-85p7v8")
     model = genai.GenerativeModel("gemini-1.5-flash")
 except KeyError:
-    st.error("GOOGLE_API_KEY가 설정되지 않았습니다. 환경 변수를 확인하세요.")
+    st.error("GOOGLE_API_KEY가 설정되지 않았습니다. `.streamlit/secrets.toml` 파일을 확인하세요.")
     st.stop()
 except Exception as e:
     st.error(f"Gemini 모델 초기화 중 오류가 발생했습니다: {e}")
     st.stop()
 
-# 페이지 설정
+# **2. Streamlit 페이지 설정**
 st.set_page_config(page_title="🍊참신한 제주 맛집!", layout="wide")
+st.title("혼저 옵서예!👋")
+st.subheader("군맛난 제주 밥집🧑‍🍳 추천해드릴게예")
 
-# CSV 파일 로드 및 데이터 전처리
+# **3. 이미지 표시**
+image_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRTHBMuNn2EZw3PzOHnLjDg_psyp-egZXcclWbiASta57PBiKwzpW5itBNms9VFU8UwEMQ&usqp=CAU"
+st.image(image_url, width=500)
+
+# **4. 데이터 로드 및 전처리**
 data_path = './data'
 csv_file_path = "JEJU_DATA.csv"
 
@@ -46,7 +55,7 @@ def load_csv(file_path):
 
 df = load_csv(os.path.join(data_path, csv_file_path))
 
-# FAISS 및 임베딩 설정
+# **5. FAISS 및 임베딩 설정**
 module_path = './modules'
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -83,7 +92,7 @@ def load_faiss_index(index_path=os.path.join(module_path, 'faiss_index.index')):
 
 faiss_index = load_faiss_index()
 
-# 텍스트 임베딩 함수
+# **6. 텍스트 임베딩 함수**
 def embed_text(text):
     try:
         inputs = tokenizer(text, return_tensors='pt', padding=True, truncation=True).to(device)
@@ -94,7 +103,7 @@ def embed_text(text):
         st.error(f"텍스트 임베딩 중 오류가 발생했습니다: {e}")
         return None
 
-# 응답 생성 함수
+# **7. 응답 생성 함수**
 def generate_response_with_faiss(question, df, embeddings, faiss_index, model, embed_text, k=3):
     if embeddings is None or faiss_index is None:
         return "임베딩 파일 또는 FAISS 인덱스가 로드되지 않았습니다."
@@ -108,7 +117,12 @@ def generate_response_with_faiss(question, df, embeddings, faiss_index, model, e
             return "질문과 일치하는 가게가 없습니다."
 
         reference_info = "\n".join(filtered_df['text'])
-        prompt = f"질문: {question}\n대답해줄 때 업종별로 가능하면 하나씩 추천해줘. 그리고 추가적으로 오래된 맛집과 새로운 맛집을 각각 추천해줘.\n참고할 정보: {reference_info}\n응답:"
+        prompt = (
+            f"질문: {question}\n"
+            f"대답해줄 때 업종별로 가능하면 하나씩 추천해줘. "
+            f"그리고 추가적으로 오래된 맛집과 새로운 맛집을 각각 추천해줘.\n"
+            f"참고할 정보: {reference_info}\n응답:"
+        )
         response = model.generate_content(prompt)
         
         # 응답 객체에서 텍스트 추출
@@ -117,7 +131,7 @@ def generate_response_with_faiss(question, df, embeddings, faiss_index, model, e
     except Exception as e:
         return f"응답 생성 중 오류가 발생했습니다: {e}"
 
-# 대화 기록 저장 및 로드 기능
+# **8. 대화 기록 저장 및 로드 기능**
 history_path = os.path.join(module_path, 'conversation_history.json')
 
 # 대화 기록 저장 함수
@@ -125,8 +139,7 @@ def save_conversation_history(conversations):
     try:
         with open(history_path, 'w', encoding='utf-8') as f:
             json.dump(conversations, f, ensure_ascii=False, indent=4)
-    except TypeError as e:
-        st.error(f"대화 기록 저장 중 TypeError가 발생했습니다: {e}")
+        st.success("대화 기록이 저장되었습니다.")
     except Exception as e:
         st.error(f"대화 기록 저장 중 오류가 발생했습니다: {e}")
 
@@ -145,88 +158,42 @@ def load_conversation_history():
 def initialize_conversation():
     return {
         "id": str(uuid.uuid4()),
-        "title": f"대화 세션 {datetime.now().strftime('%Y-%m-%d')}",
-        "messages": [{"role": "assistant", "content": "어드런 식당 찾으시쿠과?", "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]
+        "title": "",
+        "messages": []
     }
 
-# Streamlit 메인 페이지 설정
-st.title("혼저 옵서예!👋")
-st.subheader("군맛난 제주 밥집🧑‍🍳 추천해드릴게예")
-
-# 이미지 표시
-image_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRTHBMuNn2EZw3PzOHnLjDg_psyp-egZXcclWbiASta57PBiKwzpW5itBNms9VFU8UwEMQ&usqp=CAU"
-st.image(image_url, width=500)
-
-# 대화 세션 상태 초기화
+# **9. 대화 세션 상태 초기화**
 if "conversations" not in st.session_state:
     st.session_state.conversations = load_conversation_history()
     if not st.session_state.conversations:
         initial_conversation = initialize_conversation()
         st.session_state.conversations.append(initial_conversation)
-        st.session_state.current_conversation = initial_conversation["id"]
-    else:
-        st.session_state.current_conversation = st.session_state.conversations[0]["id"]
+    st.session_state.current_conversation = st.session_state.conversations[0]
 
-# 사이드바에 대화 기록 관리 UI
+# **10. 사이드바 간소화: 대화 저장 버튼만 남김**
 with st.sidebar:
-    st.header("📜 대화 기록 관리")
-
-    # 대화 세션 선택
-    conversation_titles = [conv["title"] if conv["title"] else f"대화 세션 {conv['id']}" for conv in st.session_state.conversations]
-    selected_title = st.selectbox("대화 세션 선택", conversation_titles)
-    selected_conv_id = next(conv["id"] for conv in st.session_state.conversations if (conv["title"] or f"대화 세션 {conv['id']}") == selected_title)
-    st.session_state.current_conversation = selected_conv_id
-
-    # 새로운 대화 세션 생성 버튼
-    if st.button("새로운 대화 생성"):
-        new_conv = initialize_conversation()
-        new_conv["title"] = f"대화 세션 {len(st.session_state.conversations) + 1}"
-        st.session_state.conversations.append(new_conv)
-        st.session_state.current_conversation = new_conv["id"]
+    st.header("💾 대화 저장")
+    if st.sidebar.button("대화 저장"):
         save_conversation_history(st.session_state.conversations)
-        st.success("새로운 대화 세션이 생성되었습니다.")
 
-    # 대화 세션 삭제 버튼
-    if st.button("대화 세션 삭제"):
-        if len(st.session_state.conversations) > 1:
-            st.session_state.conversations = [
-                conv for conv in st.session_state.conversations 
-                if conv["id"] != st.session_state.current_conversation
-            ]
-            st.session_state.current_conversation = st.session_state.conversations[0]["id"]
-            save_conversation_history(st.session_state.conversations)
-            st.success("대화 세션이 삭제되었습니다.")
-        else:
-            st.warning("삭제할 대화 세션이 없습니다.")
-
-    # 대화 기록 저장 버튼
-    if st.button("대화 기록 저장"):
-        save_conversation_history(st.session_state.conversations)
-        st.success("대화 기록이 저장되었습니다.")
-
-    # 대화 기록 초기화 버튼
-    if st.button("대화 초기화"):
-        st.session_state.conversations = [initialize_conversation()]
-        save_conversation_history(st.session_state.conversations)
-        st.success("대화가 초기화되었습니다.")
-
-# 채팅 입력 및 응답 처리
+# **11. 채팅 입력 및 응답 처리**
 chat_input = st.chat_input("질문을 입력하세요:")
 if chat_input:
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    current_conv = next(conv for conv in st.session_state.conversations if conv["id"] == st.session_state.current_conversation)
+    current_conv = st.session_state.current_conversation
+
+    # 첫 번째 사용자 메시지일 경우, 제목 설정
+    if not current_conv["title"]:
+        current_conv["title"] = (chat_input[:15] + "...") if len(chat_input) > 15 else chat_input
 
     # 사용자 메시지 추가
-    user_message = {"role": "user", "content": chat_input, "timestamp": current_time}
+    user_message = {"role": "user", "content": chat_input, "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
     current_conv["messages"].append(user_message)
     st.markdown(f"**사용자:** {chat_input}")
 
     # 어시스턴트 응답 생성
     response = generate_response_with_faiss(chat_input, df, embeddings, faiss_index, model, embed_text)
-    assistant_message = {"role": "assistant", "content": response, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    assistant_message = {"role": "assistant", "content": response, "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
     current_conv["messages"].append(assistant_message)
-
-    # 채팅 출력
     st.markdown(f"**어시스턴트:** {response}")
 
     # 대화 기록 저장
