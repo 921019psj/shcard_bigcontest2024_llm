@@ -17,8 +17,8 @@ import google.generativeai as genai
 # GOOGLE_API_KEY = "YOUR_ACTUAL_API_KEY"
 
 try:
-    GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
-    genai.configure(api_key=GOOGLE_API_KEY)
+    # GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+    genai.configure(api_key="AIzaSyD1eKM8Wo6kW4p1UnflQKUzl8Oi-85p7v8")
     model = genai.GenerativeModel("gemini-1.5-flash")
 except KeyError:
     st.error("GOOGLE_API_KEY가 설정되지 않았습니다. `.streamlit/secrets.toml` 파일을 확인하세요.")
