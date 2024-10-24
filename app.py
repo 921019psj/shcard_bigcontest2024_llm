@@ -1,4 +1,6 @@
 import os
+import json
+import uuid
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -7,92 +9,79 @@ import torch
 import faiss
 import streamlit as st
 import google.generativeai as genai
+import psutil  # 리소스 모니터링 라이브러리
 
-# 경로 설정
-data_path = './data'
-module_path = './modules'
-
-# Google Gemini API 설정
-genai.configure(api_key="AIzaSyD1eKM8Wo6kW4p1UnflQKUzl8Oi-85p7v8")
-model = genai.GenerativeModel("gemini-1.5-flash")
-
-# CSV 파일 로드
-csv_file_path = "JEJU_DATA.csv"
-df = pd.read_csv(os.path.join(data_path, csv_file_path), encoding='cp949')
-df = df[df['기준연월'] == df['기준연월'].max()].reset_index(drop=True)
-
-# Streamlit App UI 설정
-st.set_page_config(page_title="🍊참신한 제주 맛집!")
-st.title("혼저 옵서예!👋")
-st.subheader("군맛난 제주 밥집🧑‍🍳 추천해드릴게예")
-image_path = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRTHBMuNn2EZw3PzOHnLjDg_psyp-egZXcclWbiASta57PBiKwzpW5itBNms9VFU8UwEMQ&usqp=CAU"
-image_html = f"""<div style="display: flex; justify-content: center;">
-    <img src="{image_path}" alt="centered image" width="50%">
-</div>"""
-st.markdown(image_html, unsafe_allow_html=True)
-
-# 대화 세션 저장 및 불러오기
-if "conversations" not in st.session_state:
-    st.session_state.conversations = []
-if "current_conversation" not in st.session_state:
-    st.session_state.current_conversation = {"id": None, "messages": [], "title": ""}
-
-# 사이드바에서 대화 기록 관리
-st.sidebar.header("💬 대화 기록 관리")
-
-# 새로운 대화 시작 버튼
-if st.sidebar.button("새로운 대화 시작"):
-    new_conversation = {"id": len(st.session_state.conversations) + 1, "messages": [], "title": ""}
-    st.session_state.conversations.append(new_conversation)
-    st.session_state.current_conversation = new_conversation
-
-# 대화 세션 선택
-if st.session_state.conversations:
-    conversation_titles = [f"{conv['title'] or '대화 세션 ' + str(conv['id'])}" for conv in st.session_state.conversations]
-    selected_conversation_title = st.sidebar.selectbox("대화 세션 선택", conversation_titles)
-
-    # 선택된 대화 세션 로드
-    selected_conversation = next(
-        (conv for conv in st.session_state.conversations if (conv['title'] or f"대화 세션 {conv['id']}") == selected_conversation_title), None)
-    
-    if selected_conversation:
-        st.session_state.current_conversation = selected_conversation
-        st.session_state.messages = selected_conversation["messages"]
-    else:
-        st.session_state.messages = []
-else:
-    st.session_state.messages = []
-
-# 채팅 메시지 표시
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
-
-# 채팅 내역 초기화 버튼
-def clear_chat_history():
-    if st.session_state.current_conversation:
-        st.session_state.current_conversation["messages"] = []
-    st.session_state.messages = []
-st.sidebar.button('Clear Chat History', on_click=clear_chat_history)
-
-# 디바이스 설정
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Hugging Face 사전 학습된 모델 로드
-model_name = "jhgan/ko-sroberta-multitask"
+# Google API Key 설정
 try:
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    embedding_model = AutoModel.from_pretrained(model_name).to(device)
+    # 환경 변수 또는 Streamlit Secrets에서 API 키 가져오기
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or st.secrets["GOOGLE_API_KEY"]
+    genai.configure(api_key="AIzaSyD1eKM8Wo6kW4p1UnflQKUzl8Oi-85p7v8")
+    model = genai.GenerativeModel("gemini-1.5-flash")
+except KeyError:
+    st.error("GOOGLE_API_KEY가 설정되지 않았습니다. 환경 변수를 확인하세요.")
+    st.stop()
 except Exception as e:
-    st.error(f"Error loading tokenizer or model: {e}")
+    st.error(f"Gemini 모델 초기화 중 오류가 발생했습니다: {e}")
+    st.stop()
 
-# FAISS 인덱스 로드 함수
+# 페이지 설정
+st.set_page_config(page_title="🍊참신한 제주 맛집!", layout="wide")
+
+# CSV 파일 로드 및 데이터 전처리
+data_path = './data'
+csv_file_path = "JEJU_DATA.csv"
+
+def load_csv(file_path):
+    if os.path.exists(file_path):
+        try:
+            df = pd.read_csv(file_path, encoding='cp949')
+            df = df[df['기준연월'] == df['기준연월'].max()].reset_index(drop=True)
+            return df
+        except Exception as e:
+            st.error(f"CSV 파일 로드 중 오류가 발생했습니다: {e}")
+            return pd.DataFrame()
+    else:
+        st.error(f"{file_path} 파일이 존재하지 않습니다.")
+        return pd.DataFrame()
+
+df = load_csv(os.path.join(data_path, csv_file_path))
+
+# FAISS 및 임베딩 설정
+module_path = './modules'
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+try:
+    tokenizer = AutoTokenizer.from_pretrained("jhgan/ko-sroberta-multitask")
+    embedding_model = AutoModel.from_pretrained("jhgan/ko-sroberta-multitask").to(device)
+except Exception as e:
+    st.error(f"토크나이저 또는 임베딩 모델 로드 중 오류가 발생했습니다: {e}")
+    st.stop()
+
+def load_embeddings(file_path):
+    if os.path.exists(file_path):
+        try:
+            return np.load(file_path)
+        except Exception as e:
+            st.error(f"임베딩 파일 로드 중 오류가 발생했습니다: {e}")
+            return None
+    else:
+        st.error(f"{file_path} 파일이 존재하지 않습니다.")
+        return None
+
+embeddings = load_embeddings(os.path.join(module_path, 'embeddings_array_file.npy'))
+
 def load_faiss_index(index_path=os.path.join(module_path, 'faiss_index.index')):
     if os.path.exists(index_path):
-        index = faiss.read_index(index_path)
-        return index
+        try:
+            return faiss.read_index(index_path)
+        except Exception as e:
+            st.error(f"FAISS 인덱스 로드 중 오류가 발생했습니다: {e}")
+            return None
     else:
-        raise FileNotFoundError(f"{index_path} 파일이 존재하지 않습니다.")
+        st.error(f"{index_path} 파일이 존재하지 않습니다.")
+        return None
+
+faiss_index = load_faiss_index()
 
 # 텍스트 임베딩 함수
 def embed_text(text):
@@ -102,44 +91,143 @@ def embed_text(text):
             embeddings = embedding_model(**inputs).last_hidden_state.mean(dim=1)
         return embeddings.squeeze().cpu().numpy()
     except Exception as e:
-        st.error(f"Error in embedding text: {e}")
+        st.error(f"텍스트 임베딩 중 오류가 발생했습니다: {e}")
         return None
 
-# FAISS 기반 응답 생성 함수
-def generate_response_with_faiss(question, df, embeddings, model, embed_text, index_path=os.path.join(module_path, 'faiss_index.index'), k=3):
+# 응답 생성 함수
+def generate_response_with_faiss(question, df, embeddings, faiss_index, model, embed_text, k=3):
+    if embeddings is None or faiss_index is None:
+        return "임베딩 파일 또는 FAISS 인덱스가 로드되지 않았습니다."
+
     try:
-        index = load_faiss_index(index_path)
         query_embedding = embed_text(question).reshape(1, -1)
-        distances, indices = index.search(query_embedding, k*3)
-        filtered_df = df.iloc[indices[0, :]].copy().reset_index(drop=True)
+        distances, indices = faiss_index.search(query_embedding, k * 3)
+        filtered_df = df.iloc[indices[0, :]].copy().reset_index(drop=True).head(k)
 
         if filtered_df.empty:
             return "질문과 일치하는 가게가 없습니다."
 
         reference_info = "\n".join(filtered_df['text'])
-        prompt = f"질문: {question} \n대답해줄때 업종별로 가능하면 하나씩 추천해줘. 그리고 추가적으로 오래된 맛집과 새로운 맛집을 각각 추천해줘.\n참고할 정보: {reference_info}\n응답:"
+        prompt = f"질문: {question}\n대답해줄 때 업종별로 가능하면 하나씩 추천해줘. 그리고 추가적으로 오래된 맛집과 새로운 맛집을 각각 추천해줘.\n참고할 정보: {reference_info}\n응답:"
         response = model.generate_content(prompt)
-        return response
+        
+        # 응답 객체에서 텍스트 추출
+        extracted_text = response.candidates[0].content.parts[0].text
+        return extracted_text
     except Exception as e:
         return f"응답 생성 중 오류가 발생했습니다: {e}"
 
-# 사용자 입력 처리 및 응답 생성
-if prompt := st.chat_input():
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    st.session_state.current_conversation["messages"].append({"role": "user", "content": prompt})
-    
-    # 제목 자동 설정 (질문 요약)
-    st.session_state.current_conversation["title"] = prompt[:15] + "..."  # 질문을 요약하여 제목 설정
-    
-    with st.chat_message("user"):
-        st.write(prompt)
+# 대화 기록 저장 및 로드 기능
+history_path = os.path.join(module_path, 'conversation_history.json')
 
-    if st.session_state.messages[-1]["role"] != "assistant":
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                response = generate_response_with_faiss(prompt, df, None, model, embed_text)
-                full_response = response if isinstance(response, str) else response.text
-                st.write(full_response)
+# 대화 기록 저장 함수
+def save_conversation_history(conversations):
+    try:
+        with open(history_path, 'w', encoding='utf-8') as f:
+            json.dump(conversations, f, ensure_ascii=False, indent=4)
+    except TypeError as e:
+        st.error(f"대화 기록 저장 중 TypeError가 발생했습니다: {e}")
+    except Exception as e:
+        st.error(f"대화 기록 저장 중 오류가 발생했습니다: {e}")
 
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
-        st.session_state.current_conversation["messages"].append({"role": "assistant", "content": full_response})  
+# 대화 기록 로드 함수
+def load_conversation_history():
+    if os.path.exists(history_path):
+        try:
+            with open(history_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            st.error(f"대화 기록 로드 중 오류가 발생했습니다: {e}")
+            return []
+    return []
+
+# 대화 세션 초기화 함수
+def initialize_conversation():
+    return {
+        "id": str(uuid.uuid4()),
+        "title": f"대화 세션 {datetime.now().strftime('%Y-%m-%d')}",
+        "messages": [{"role": "assistant", "content": "어드런 식당 찾으시쿠과?", "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]
+    }
+
+# Streamlit 메인 페이지 설정
+st.title("혼저 옵서예!👋")
+st.subheader("군맛난 제주 밥집🧑‍🍳 추천해드릴게예")
+
+# 이미지 표시
+image_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRTHBMuNn2EZw3PzOHnLjDg_psyp-egZXcclWbiASta57PBiKwzpW5itBNms9VFU8UwEMQ&usqp=CAU"
+st.image(image_url, width=500)
+
+# 대화 세션 상태 초기화
+if "conversations" not in st.session_state:
+    st.session_state.conversations = load_conversation_history()
+    if not st.session_state.conversations:
+        initial_conversation = initialize_conversation()
+        st.session_state.conversations.append(initial_conversation)
+        st.session_state.current_conversation = initial_conversation["id"]
+    else:
+        st.session_state.current_conversation = st.session_state.conversations[0]["id"]
+
+# 사이드바에 대화 기록 관리 UI
+with st.sidebar:
+    st.header("📜 대화 기록 관리")
+
+    # 대화 세션 선택
+    conversation_titles = [conv["title"] if conv["title"] else f"대화 세션 {conv['id']}" for conv in st.session_state.conversations]
+    selected_title = st.selectbox("대화 세션 선택", conversation_titles)
+    selected_conv_id = next(conv["id"] for conv in st.session_state.conversations if (conv["title"] or f"대화 세션 {conv['id']}") == selected_title)
+    st.session_state.current_conversation = selected_conv_id
+
+    # 새로운 대화 세션 생성 버튼
+    if st.button("새로운 대화 생성"):
+        new_conv = initialize_conversation()
+        new_conv["title"] = f"대화 세션 {len(st.session_state.conversations) + 1}"
+        st.session_state.conversations.append(new_conv)
+        st.session_state.current_conversation = new_conv["id"]
+        save_conversation_history(st.session_state.conversations)
+        st.success("새로운 대화 세션이 생성되었습니다.")
+
+    # 대화 세션 삭제 버튼
+    if st.button("대화 세션 삭제"):
+        if len(st.session_state.conversations) > 1:
+            st.session_state.conversations = [
+                conv for conv in st.session_state.conversations 
+                if conv["id"] != st.session_state.current_conversation
+            ]
+            st.session_state.current_conversation = st.session_state.conversations[0]["id"]
+            save_conversation_history(st.session_state.conversations)
+            st.success("대화 세션이 삭제되었습니다.")
+        else:
+            st.warning("삭제할 대화 세션이 없습니다.")
+
+    # 대화 기록 저장 버튼
+    if st.button("대화 기록 저장"):
+        save_conversation_history(st.session_state.conversations)
+        st.success("대화 기록이 저장되었습니다.")
+
+    # 대화 기록 초기화 버튼
+    if st.button("대화 초기화"):
+        st.session_state.conversations = [initialize_conversation()]
+        save_conversation_history(st.session_state.conversations)
+        st.success("대화가 초기화되었습니다.")
+
+# 채팅 입력 및 응답 처리
+chat_input = st.chat_input("질문을 입력하세요:")
+if chat_input:
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    current_conv = next(conv for conv in st.session_state.conversations if conv["id"] == st.session_state.current_conversation)
+
+    # 사용자 메시지 추가
+    user_message = {"role": "user", "content": chat_input, "timestamp": current_time}
+    current_conv["messages"].append(user_message)
+    st.markdown(f"**사용자:** {chat_input}")
+
+    # 어시스턴트 응답 생성
+    response = generate_response_with_faiss(chat_input, df, embeddings, faiss_index, model, embed_text)
+    assistant_message = {"role": "assistant", "content": response, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    current_conv["messages"].append(assistant_message)
+
+    # 채팅 출력
+    st.markdown(f"**어시스턴트:** {response}")
+
+    # 대화 기록 저장
+    save_conversation_history(st.session_state.conversations)
