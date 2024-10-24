@@ -11,7 +11,7 @@ import streamlit as st
 import google.generativeai as genai
 
 # **1. 보안 설정: API 키 관리**
-# API 키는 코드에 직접 포함시키지 않고, 환경 변수나 Streamlit Secrets를 통해 관리하는 것이 안전합니다.
+# **중요:** API 키를 코드에 직접 포함시키지 말고, 환경 변수나 Streamlit Secrets를 통해 관리하세요.
 # 여기서는 Streamlit Secrets를 사용하는 예시를 보여드립니다.
 # `.streamlit/secrets.toml` 파일에 다음과 같이 API 키를 추가하세요:
 # GOOGLE_API_KEY = "YOUR_ACTUAL_API_KEY"
@@ -28,13 +28,18 @@ except Exception as e:
     st.stop()
 
 # **2. Streamlit 페이지 설정**
-st.set_page_config(page_title="🍊참신한 제주 맛집!", layout="wide")
+st.set_page_config(page_title="🍊참신한 제주 레스토랑!", layout="wide")
 st.title("혼저 옵서예!👋")
 st.subheader("군맛난 제주 밥집🧑‍🍳 추천해드릴게예")
 
 # **3. 이미지 표시**
 image_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRTHBMuNn2EZw3PzOHnLjDg_psyp-egZXcclWbiASta57PBiKwzpW5itBNms9VFU8UwEMQ&usqp=CAU"
-st.image(image_url, width=500)
+image_html = f"""
+<div style="display: flex; justify-content: center;">
+    <img src="{image_url}" alt="centered image" width="50%">
+</div>
+"""
+st.markdown(image_html, unsafe_allow_html=True)
 
 # **4. 데이터 로드 및 전처리**
 data_path = './data'
@@ -57,7 +62,7 @@ df = load_csv(os.path.join(data_path, csv_file_path))
 
 # **5. FAISS 및 임베딩 설정**
 module_path = './modules'
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 try:
     tokenizer = AutoTokenizer.from_pretrained("jhgan/ko-sroberta-multitask")
@@ -134,7 +139,6 @@ def generate_response_with_faiss(question, df, embeddings, faiss_index, model, e
 # **8. 대화 기록 저장 및 로드 기능**
 history_path = os.path.join(module_path, 'conversation_history.json')
 
-# 대화 기록 저장 함수
 def save_conversation_history(conversations):
     try:
         with open(history_path, 'w', encoding='utf-8') as f:
@@ -143,7 +147,6 @@ def save_conversation_history(conversations):
     except Exception as e:
         st.error(f"대화 기록 저장 중 오류가 발생했습니다: {e}")
 
-# 대화 기록 로드 함수
 def load_conversation_history():
     if os.path.exists(history_path):
         try:
@@ -154,7 +157,6 @@ def load_conversation_history():
             return []
     return []
 
-# 대화 세션 초기화 함수
 def initialize_conversation():
     return {
         "id": str(uuid.uuid4()),
@@ -173,7 +175,7 @@ if "conversations" not in st.session_state:
 # **10. 사이드바 간소화: 대화 저장 버튼만 남김**
 with st.sidebar:
     st.header("💾 대화 저장")
-    if st.sidebar.button("대화 저장"):
+    if st.button("대화 저장"):
         save_conversation_history(st.session_state.conversations)
 
 # **11. 채팅 입력 및 응답 처리**
