@@ -13,7 +13,7 @@ data_path = './data'
 module_path = './modules'
 
 # Google Gemini API 설정
-genai.configure(api_key="AIzaSyD1eKM8Wo6kW4p1UnflQKUzl8Oi-85p7v8")  
+genai.configure(api_key="AIzaSyD1eKM8Wo6kW4p1UnflQKUzl8Oi-85p7v8")
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 # CSV 파일 로드
@@ -35,31 +35,31 @@ st.markdown(image_html, unsafe_allow_html=True)
 if "conversations" not in st.session_state:
     st.session_state.conversations = []
 if "current_conversation" not in st.session_state:
-    st.session_state.current_conversation = {"id": None, "messages": [], "title": ""}
+    st.session_state.current_conversation = {"id": None, "messages": []}
 
 # 사이드바에서 대화 기록 관리
 st.sidebar.header("💬 대화 기록 관리")
 
 # 새로운 대화 시작 버튼
 if st.sidebar.button("새로운 대화 시작"):
-    new_conversation = {"id": len(st.session_state.conversations) + 1, "messages": [], "title": ""}
+    new_conversation = {"id": len(st.session_state.conversations) + 1, "messages": []}
     st.session_state.conversations.append(new_conversation)
     st.session_state.current_conversation = new_conversation
 
 # 대화 세션 선택
 if st.session_state.conversations:
-    conversation_titles = [f"{conv['title'] if conv['title'] else '대화 세션 ' + str(conv['id'])}" for conv in st.session_state.conversations]
+    conversation_titles = [f"대화 세션 {conv['id']}" for conv in st.session_state.conversations]
     selected_conversation_title = st.sidebar.selectbox("대화 세션 선택", conversation_titles)
 
     # 선택된 대화 세션 로드
     selected_conversation = next(
-        (conv for conv in st.session_state.conversations if (conv['title'] == selected_conversation_title or f"대화 세션 {conv['id']}" == selected_conversation_title)), None)
+        (conv for conv in st.session_state.conversations if f"대화 세션 {conv['id']}" == selected_conversation_title), None)
     
     if selected_conversation:
         st.session_state.current_conversation = selected_conversation
         st.session_state.messages = selected_conversation["messages"]
     else:
-        st.error("선택한 대화 세션이 없습니다.")
+        st.session_state.messages = []
 else:
     st.session_state.messages = []
 
@@ -72,7 +72,6 @@ for message in st.session_state.messages:
 def clear_chat_history():
     if st.session_state.current_conversation:
         st.session_state.current_conversation["messages"] = []
-        st.session_state.current_conversation["title"] = ""  # 제목 초기화
     st.session_state.messages = []
 st.sidebar.button('Clear Chat History', on_click=clear_chat_history)
 
@@ -128,10 +127,6 @@ def generate_response_with_faiss(question, df, embeddings, model, embed_text, in
 if prompt := st.chat_input():
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.session_state.current_conversation["messages"].append({"role": "user", "content": prompt})
-
-    # 대화 세션 제목을 사용자가 입력한 질문의 첫 문장으로 설정
-    st.session_state.current_conversation["title"] = prompt.split('.')[0]  # 첫 문장 추출
-
     with st.chat_message("user"):
         st.write(prompt)
 
@@ -141,5 +136,9 @@ if prompt := st.chat_input():
                 response = generate_response_with_faiss(prompt, df, None, model, embed_text)
                 full_response = response if isinstance(response, str) else response.text
                 st.write(full_response)
+
+        # 제목 자동 설정
+        title_summary = f"질문: {prompt[:15]}..."  # 질문을 간략히 표시
+        st.session_state.current_conversation["title"] = title_summary
         st.session_state.messages.append({"role": "assistant", "content": full_response})
         st.session_state.current_conversation["messages"].append({"role": "assistant", "content": full_response})
