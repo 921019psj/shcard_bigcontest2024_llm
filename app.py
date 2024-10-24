@@ -10,6 +10,7 @@ import faiss
 import streamlit as st
 import google.generativeai as genai
 
+
 # **1. 보안 설정: API 키 관리**
 try:
     genai.configure(api_key="AIzaSyD1eKM8Wo6kW4p1UnflQKUzl8Oi-85p7v8")
