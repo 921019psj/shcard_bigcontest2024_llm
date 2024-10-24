@@ -14,7 +14,7 @@ import psutil  # 리소스 모니터링 라이브러리
 # Google API Key 설정
 try:
     # 환경 변수 또는 Streamlit Secrets에서 API 키 가져오기
-    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or st.secrets["GOOGLE_API_KEY"]
+    # GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key="AIzaSyD1eKM8Wo6kW4p1UnflQKUzl8Oi-85p7v8")
     model = genai.GenerativeModel("gemini-1.5-flash")
 except KeyError:
