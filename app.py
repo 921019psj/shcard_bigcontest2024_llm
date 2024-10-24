@@ -128,7 +128,7 @@ if prompt := st.chat_input():
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.session_state.current_conversation["messages"].append({"role": "user", "content": prompt})
     
-    # 제목 자동 설정
+    # 제목 자동 설정 (질문 요약)
     st.session_state.current_conversation["title"] = prompt[:15] + "..."  # 질문을 요약하여 제목 설정
     
     with st.chat_message("user"):
