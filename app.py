@@ -35,25 +35,25 @@ st.markdown(image_html, unsafe_allow_html=True)
 if "conversations" not in st.session_state:
     st.session_state.conversations = []
 if "current_conversation" not in st.session_state:
-    st.session_state.current_conversation = {"id": None, "messages": []}
+    st.session_state.current_conversation = {"id": None, "messages": [], "title": ""}
 
 # 사이드바에서 대화 기록 관리
 st.sidebar.header("💬 대화 기록 관리")
 
 # 새로운 대화 시작 버튼
 if st.sidebar.button("새로운 대화 시작"):
-    new_conversation = {"id": len(st.session_state.conversations) + 1, "messages": []}
+    new_conversation = {"id": len(st.session_state.conversations) + 1, "messages": [], "title": ""}
     st.session_state.conversations.append(new_conversation)
     st.session_state.current_conversation = new_conversation
 
 # 대화 세션 선택
 if st.session_state.conversations:
-    conversation_titles = [f"대화 세션 {conv['id']}" for conv in st.session_state.conversations]
+    conversation_titles = [f"{conv['title'] or '대화 세션 ' + str(conv['id'])}" for conv in st.session_state.conversations]
     selected_conversation_title = st.sidebar.selectbox("대화 세션 선택", conversation_titles)
 
     # 선택된 대화 세션 로드
     selected_conversation = next(
-        (conv for conv in st.session_state.conversations if f"대화 세션 {conv['id']}" == selected_conversation_title), None)
+        (conv for conv in st.session_state.conversations if (conv['title'] or f"대화 세션 {conv['id']}") == selected_conversation_title), None)
     
     if selected_conversation:
         st.session_state.current_conversation = selected_conversation
@@ -127,6 +127,10 @@ def generate_response_with_faiss(question, df, embeddings, model, embed_text, in
 if prompt := st.chat_input():
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.session_state.current_conversation["messages"].append({"role": "user", "content": prompt})
+    
+    # 제목 자동 설정
+    st.session_state.current_conversation["title"] = prompt[:15] + "..."  # 질문을 요약하여 제목 설정
+    
     with st.chat_message("user"):
         st.write(prompt)
 
@@ -137,8 +141,5 @@ if prompt := st.chat_input():
                 full_response = response if isinstance(response, str) else response.text
                 st.write(full_response)
 
-        # 제목 자동 설정
-        title_summary = f"질문: {prompt[:15]}..."  # 질문을 간략히 표시
-        st.session_state.current_conversation["title"] = title_summary
         st.session_state.messages.append({"role": "assistant", "content": full_response})
-        st.session_state.current_conversation["messages"].append({"role": "assistant", "content": full_response})
+        st.session_state.current_conversation["messages"].append({"role": "assistant", "content": full_response})  
